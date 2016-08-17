@@ -238,12 +238,14 @@ class GenomicSignal:
         fBiasDict = bias_table.table[0]; rBiasDict = bias_table.table[1]
         k_nb = len(fBiasDict.keys()[0])
         p1 = start; p2 = end
+        chrLength = self.bam.lengths[self.bam.get_tid(chrName)]
         p1_w = p1 - (window/2); p2_w = p2 + (window/2)
         p1_wk = p1_w - (k_nb/2); p2_wk = p2_w + (k_nb/2)
 
         # Raw counts
         nf = [0.0] * (p2_w-p1_w); nr = [0.0] * (p2_w-p1_w)
-        for r in self.bam.fetch(chrName, p1_w, p2_w):
+        # Correct when p1_w is before beginning or p2_w is past end
+        for r in self.bam.fetch(chrName, max(p1_w, 0), min(p2_w, chrLength)):
             if((not r.is_reverse) and (r.pos > p1_w)): nf[r.pos-p1_w] += 1.0
             if((r.is_reverse) and ((r.aend-1) < p2_w)): nr[r.aend-1-p1_w] += 1.0
 
@@ -257,9 +259,18 @@ class GenomicSignal:
             fSum -= fLast; fSum += nf[i+(window/2)]; fLast = nf[i-(window/2)+1]
             rSum -= rLast; rSum += nr[i+(window/2)]; rLast = nr[i-(window/2)+1]
 
+        def getseq(chrName, s, e):
+            "Get sequence inserting 'N's if start is before beginning or end is after end."
+            result = str(fastaFile.fetch(chrName, max(0, s), min(chrLength, e))).upper()
+            if s < 0:
+                result = 'N' * (-s) + result
+            if e > chrLength:
+                result = result + 'N' * (e-chrLength)
+            return result
+
         # Fetching sequence
-        currStr = str(fastaFile.fetch(chrName, p1_wk-1, p2_wk-2)).upper()
-        currRevComp = AuxiliaryFunctions.revcomp(str(fastaFile.fetch(chrName,p1_wk+2, p2_wk+1)).upper())
+        currStr = getseq(chrName, p1_wk-1, p2_wk-2)
+        currRevComp = AuxiliaryFunctions.revcomp(getseq(chrName, p1_wk+2, p2_wk+1))
 
         # Iterating on sequence to create signal
         af = []; ar = []
